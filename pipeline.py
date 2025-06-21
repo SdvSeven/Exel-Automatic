@@ -8,13 +8,14 @@ API_KEY = "ieVRtKjI6LLdnqW5lRhLOxrejXFahN7y"
 MISTRAL_MODEL = "mistral-tiny"
 
 SAFE_BUILTINS = {
-    'len': len,
-    'range': range,
-    'min': min,
-    'max': max,
-    'sum': sum,
-    'abs': abs,
+    "len": len,
+    "range": range,
+    "min": min,
+    "max": max,
+    "sum": sum,
+    "abs": abs,
 }
+
 
 def apply_simple_task(df, task, new_names=None, orig_names=None):
     """
@@ -54,11 +55,17 @@ def apply_simple_task(df, task, new_names=None, orig_names=None):
     sort_match = re.search(r"сортируй по ([\wа-яёА-ЯЁ]+)", t)
     if sort_match:
         col = sort_match.group(1).strip()
-        if (new_names and col in new_names) or (orig_names and col in orig_names) or col in df.columns:
+        if (
+            (new_names and col in new_names)
+            or (orig_names and col in orig_names)
+            or col in df.columns
+        ):
             return df.sort_values(col)
 
     # 6. Оставить только уникальные значения в столбце
-    uniq_match = re.search(r"уникальные значения (столбца|в столбце) ([\wа-яёА-ЯЁ]+)", t)
+    uniq_match = re.search(
+        r"уникальные значения (столбца|в столбце) ([\wа-яёА-ЯЁ]+)", t
+    )
     if uniq_match:
         col = uniq_match.group(2).strip()
         if col in df.columns:
@@ -88,66 +95,75 @@ def apply_simple_task(df, task, new_names=None, orig_names=None):
         return list(df.columns)
 
     # 11. Количество строк и столбцов
-    if "размер таблицы" in t or "сколько строк" in t or "число строк" in t or "число столбцов" in t:
+    if (
+        "размер таблицы" in t
+        or "сколько строк" in t
+        or "число строк" in t
+        or "число столбцов" in t
+    ):
         return f"Строк: {df.shape[0]}, столбцов: {df.shape[1]}"
 
     # 12. Сводная информация
     if "describe" in t or "описание" in t or "summary" in t:
         return df.describe()
     return None
+    ### Вот это кстати очень интересная затея, было бы интересно дать каждую из этих тасков sql-агенту как тулзы, и посмотреть будет ли он их применять вместо sql
+
 
 def save_with_explanations_to_excel(
-        df_clean,
-        explanations,
-        output_file,
-        user_qa_list=None,
-        original_names=None,
-        new_names=None
-    ):
+    df_clean,
+    explanations,
+    output_file,
+    user_qa_list=None,
+    original_names=None,
+    new_names=None,
+):
     """
     Сохраняет DataFrame в Excel, добавляет лист с объяснениями и историей вопросов.
     """
-    with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
-        df_clean.to_excel(writer, sheet_name='Result', index=False)
+    with pd.ExcelWriter(output_file, engine="openpyxl") as writer:
+        df_clean.to_excel(writer, sheet_name="Result", index=False)
         # Лист с объяснениями
         if original_names and new_names and explanations:
-            explain_df = pd.DataFrame({
-                "Оригинальные имена": original_names,
-                "Новые имена": new_names,
-                "Пояснения": explanations
-            })
-            explain_df.to_excel(writer, sheet_name='Explanations', index=False)
+            explain_df = pd.DataFrame(
+                {
+                    "Оригинальные имена": original_names,
+                    "Новые имена": new_names,
+                    "Пояснения": explanations,
+                }
+            )
+            explain_df.to_excel(writer, sheet_name="Explanations", index=False)
         # Лист с историей запросов/ответов
         if user_qa_list:
-            hist_df = pd.DataFrame(user_qa_list, columns=['Вопрос', 'Ответ'])
-            hist_df.to_excel(writer, sheet_name='History', index=False)
+            hist_df = pd.DataFrame(user_qa_list, columns=["Вопрос", "Ответ"])
+            hist_df.to_excel(writer, sheet_name="History", index=False)
 
-def ask_mistral_simple(prompt, api_key=API_KEY, model=MISTRAL_MODEL, retries=3, messages=None):
+
+def ask_mistral_simple(
+    prompt, api_key=API_KEY, model=MISTRAL_MODEL, retries=3, messages=None
+):
     url = "https://api.mistral.ai/v1/chat/completions"
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     if messages is not None:
-        data = {
-            "model": model,
-            "messages": messages,
-            "temperature": 0.2
-        }
+        data = {"model": model, "messages": messages, "temperature": 0.2}
     else:
         data = {
             "model": model,
             "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.2
+            "temperature": 0.2,
         }
     for attempt in range(retries):
         try:
             r = requests.post(url, headers=headers, json=data, timeout=60)
             if r.status_code == 200:
-                return r.json()['choices'][0]['message']['content'].strip()
+                return r.json()["choices"][0]["message"]["content"].strip()
             elif "rate limit" in r.text.lower():
                 print("Rate limit! Жду 10 секунд...")
-                time.sleep(10*(attempt+1))
+                time.sleep(10 * (attempt + 1))
         except Exception as e:
             print("Ошибка сети:", e)
     return "Не удалось получить ответ от нейросети."
+
 
 def clean_code(code):
     code = re.sub(r"^import .+$", "", code, flags=re.MULTILINE)
@@ -158,6 +174,7 @@ def clean_code(code):
     code = re.sub(r"with\s+open\(.+?\):", "", code)
     code = code.strip()
     return code
+
 
 def make_json_safe(obj):
     if isinstance(obj, dict):
@@ -173,6 +190,7 @@ def make_json_safe(obj):
     else:
         return obj
 
+
 def process_question(df, question, user_qa_list=None, message_history=None):
     prompt = (
         f"Ты — опытный аналитик. Пользователь задал вопрос: '{question}'.\n"
@@ -181,7 +199,7 @@ def process_question(df, question, user_qa_list=None, message_history=None):
         "- Если задача аналитическая — сохрани текст в переменную `answer`\n"
         "- Если обработка таблицы — результат в переменной `result_df`\n"
         "Возвращай ТОЛЬКО код, без пояснений."
-    )
+    )  ### Промпты лучше писать на английском, если нужен ответ на русском - Asnwer in Russian, лучше работает, посмотри у коллеги его системник
     if message_history is not None:
         messages = message_history + [{"role": "user", "content": prompt}]
         llm_code = ask_mistral_simple(prompt, API_KEY, MISTRAL_MODEL, messages=messages)
@@ -201,7 +219,9 @@ def process_question(df, question, user_qa_list=None, message_history=None):
     local_vars = {"df": df.copy()}
     try:
         exec(code, {"pd": pd, "np": np, "__builtins__": SAFE_BUILTINS}, local_vars)
-        if "result_df" in local_vars and isinstance(local_vars["result_df"], pd.DataFrame):
+        if "result_df" in local_vars and isinstance(
+            local_vars["result_df"], pd.DataFrame
+        ):
             return local_vars["result_df"]
         if "answer" in local_vars:
             return local_vars["answer"]
