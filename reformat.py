@@ -7,23 +7,29 @@ import requests
 from db import write_to_sql
 from config import model, key
 
+
 def sanitize_path(path: str) -> str:
     return path.strip().strip('"').strip("'")
 
+
 def clean_table_name(name):
     # Только латиница, цифры, подчёркивания
-    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
+    return re.sub(r"[^a-zA-Z0-9_]", "_", name)
+
 
 # ---- Блок LLM-реформатирования (NEW!) ----
 
-sys_msg = {'role': 'system', 'content':
-    """Ты — умная LLM. Перефразируй запрос пользователя, чтобы он был максимально понятен для SQL-аналитика.
+sys_msg = {
+    "role": "system",
+    "content": """Ты — умная LLM. Перефразируй запрос пользователя, чтобы он был максимально понятен для SQL-аналитика.
     Определи, нужно ли создавать Excel: если запрос на выгрузку/изменение/сохранение — "да", если только вопрос — "нет".
     Структура ответа:
     1. Переформулированный запрос
     2. Нужно создать Excel: да/нет
-    Всегда отвечай строго на русском!"""
-}
+    Всегда отвечай строго на русском!""",
+}  ### Затея правильная, человеку нужен человеческий ответ, но и поэтому ему и роль нужно давать не LLM а Эксперт какой-нибудь
+### Этот агент выглядит еще как тот, кто возвращает какие-то решения, тогда имеет смысл делать json_output object_output для таких вещей, иначе ошибки форматирования
+
 
 def reformat_query(message, history):
     previous = ""
@@ -40,26 +46,30 @@ def reformat_query(message, history):
         "Authorization": f"Bearer {key}",
         "Content-Type": "application/json",
     }
-    data = {
-        "model": model,
-        "messages": [sys_msg, user_message],
-        "temperature": 0.1
-    }
-    response = requests.post("https://api.mistral.ai/v1/chat/completions", headers=headers, json=data)
+    data = {"model": model, "messages": [sys_msg, user_message], "temperature": 0.1}
+    response = requests.post(
+        "https://api.mistral.ai/v1/chat/completions", headers=headers, json=data
+    )
     if response.status_code != 200:
-        raise Exception(f"Mistral API error: {response.status_code} - {response.text[:100]}")
+        raise Exception(
+            f"Mistral API error: {response.status_code} - {response.text[:100]}"
+        )
     result = response.json()["choices"][0]["message"]["content"].strip()
-    match = re.search(r"1\. (.*?)\s*2\. Нужно создать Excel: (да|нет|Да|Нет)", result, re.DOTALL)
+    match = re.search(
+        r"1\. (.*?)\s*2\. Нужно создать Excel: (да|нет|Да|Нет)", result, re.DOTALL
+    )
     if not match:
         raise ValueError(f"Формат ответа нарушен: {result}")
     rephrased = match.group(1).strip()
     need_excel = match.group(2).strip().lower() == "да"
     return rephrased, need_excel
 
+
 # ---- ОСТАЛЬНОЕ оставляем как есть ----
 
+
 def main():
-    user_input = input('Название/путь до таблицы Excel или CSV файла: ')
+    user_input = input("Название/путь до таблицы Excel или CSV файла: ")
     user_sheet = sanitize_path(user_input)
     if not os.path.exists(user_sheet):
         print("Файл не найден:", user_sheet)
@@ -71,8 +81,8 @@ def main():
 
     try:
         with sqlite3.connect(db_name) as conn:
-            if file_ext in ['xlsx', 'xls', 'xlsm', 'xlsb', 'odf', 'ods', 'odt']:
-                xls = pd.ExcelFile(user_sheet, engine='openpyxl')
+            if file_ext in ["xlsx", "xls", "xlsm", "xlsb", "odf", "ods", "odt"]:
+                xls = pd.ExcelFile(user_sheet, engine="openpyxl")
                 for sheet_name in xls.sheet_names:
                     df = xls.parse(sheet_name)
                     if df.empty:
@@ -80,7 +90,7 @@ def main():
                         continue
                     table_name = clean_table_name(f"{table_base_name}_{sheet_name}")
                     write_to_sql(conn, df, table_name, override_existing=True)
-            elif file_ext == 'csv':
+            elif file_ext == "csv":
                 df = pd.read_csv(user_sheet)
                 if df.empty:
                     print("CSV файл пустой, импорт пропущен.")
@@ -93,5 +103,6 @@ def main():
     except Exception as e:
         print("Ошибка при обработке файла:", e)
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()
